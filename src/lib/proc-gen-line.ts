@@ -30,6 +30,7 @@ export default class ProcGenLine {
   };
   startingPoints: Vector2[];
   procGenLineState: ProcGenLineStates;
+  currentIndex: number;
 
   constructor(
     { canvas, ctx }: CanvasContext,
@@ -47,16 +48,13 @@ export default class ProcGenLine {
     this.ctx = ctx;
     this.startingPoints = startingPoints;
     this.gridLayoutOptions = gridLayoutOptions;
-    this.start = this.generateStartPos();
-    this.progress = new Vector2(this.start.x, this.start.y);
-    this.segments = [this.start];
-    this.nextSegmentIndex = 1;
+    this.segments = [this.generateStartPos()];
     this.lineStyles = {
       color: "black",
       lineWidth: 1,
     };
-    this.stepBy = 16; // the amount of pixels drawn per frame
     this.state = ProcGenLineStates.START;
+    this.currentIndex = -1;
   }
 
   generateStartPos(): Vector2 {
@@ -71,11 +69,17 @@ export default class ProcGenLine {
     }
     console.log("GENERATION COMPLETE");
     console.log(`${this.segments.length} segments.`);
+    console.log(this.segments);
     return this.segments;
   }
 
-  getRandomSegmentLen(min = 1, max = 4): number {
-    Math.floor(Math.random() * (max - min) + min);
+  next(): Vector2 {
+    this.currentIndex += 1;
+    const nextVector2: Vector2 = this.segments[this.currentIndex];
+    if (nextVector2) {
+      return new Vector2(nextVector2.x, nextVector2.y);
+    }
+    return new Vector2(0, 0);
   }
 
   getDirection(a: Vector2, b: Vector2): LineDirection {
@@ -93,17 +97,8 @@ export default class ProcGenLine {
     }
   }
 
-  getRandomSegmentLength(): number {
-    const { spacingX, spacingY } = this.gridLayoutOptions;
-    const minSegmentLengthX = spacingX;
-    const maxSegmentLengthX = minSegmentLengthX * 4; // 51, 204
-    const minSegmentLengthY = spacingY;
-    const maxSegmentLengthY = minSegmentLengthY * 4;
-    return 0;
-  }
-
   getRandomDirection(currentDirection: LineDirection): LineDirection {
-    let excludedDirection = (() => {
+    const excludedDirection = (() => {
       if (currentDirection === "left") {
         return "right";
       } else if (currentDirection === "right") {
@@ -184,45 +179,5 @@ export default class ProcGenLine {
       this.state = ProcGenLineStates.DONE;
     }
     this.segments.push(nextPoint);
-  }
-
-  stepByDirection() {
-    const currentSegment = this.currentSegment;
-    const currentDirection = this.getDirection(
-      this.segments[currentSegment - 1],
-      this.segments[currentSegment],
-    );
-
-    if (currentDirection === "left" || currentDirection === "down") {
-      return this.stepBy * -1;
-    } else {
-      return this.stepBy;
-    }
-  }
-
-  draw(): void {
-    const { xMin, xMax, yMin, yMax } = this.gridLayoutOptions;
-    const currentSegment: Vector2 = this.segments[this.currentSegment];
-    if (
-      this.progress.x !== currentSegment.x &&
-      this.progress.y === currentSegment.y
-    ) {
-      console.log("i am in the if");
-      this.progress.x += this.stepByDirection();
-    } else if (
-      this.progress.y !== currentSegment.y &&
-      this.progress.x === currentSegment.x
-    ) {
-      console.log("in the else if");
-      this.progress.y += this.stepByDirection();
-    } else {
-      this.currentSegment += 1;
-      return;
-    }
-
-    this.ctx.beginPath();
-    this.ctx.moveTo(currentSegment.x, currentSegment.y);
-    this.ctx.lineTo(this.progress.x, this.progress.y);
-    this.ctx.stroke();
   }
 }

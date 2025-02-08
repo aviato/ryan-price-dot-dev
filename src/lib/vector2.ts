@@ -1,8 +1,8 @@
 import isEmptyValue from "./utils/isEmptyValue.ts";
 
 export default class Vector2 {
-  readonly x: number;
-  readonly y: number;
+  public x: number;
+  public y: number;
 
   constructor(x: number, y: number) {
     if (isNaN(x) || isNaN(y)) {
@@ -38,6 +38,6 @@ export default class Vector2 {
     if (isEmptyValue(a) || isEmptyValue(b)) {
       throw new Error("You must provide two valid Vector2s");
     }
-    return;
+    return a.x === b.x && a.y === b.y;
   }
 }

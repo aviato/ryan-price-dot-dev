@@ -137,105 +137,91 @@ function App() {
         v2.x === spacingX * (numColumns - 1) ||
         v2.y === spacingY || v2.y === spacingY * (rows - 1);
     });
-    console.log({ edges });
-
     let lastTimeStamp = 0;
     let procGenLine = new ProcGenLine(canvasContext, gridLayoutOptions, edges);
     procGenLine.generate();
-    let temp = new Vector2(procGenLine.start.x, procGenLine.start.y);
-    let stepBy = 2;
-    let diff = Vector2.subtract(
-      procGenLine.segments[procGenLine.nextSegmentIndex],
-      temp,
-    );
-    let wait = false;
-    console.log({ diff });
+    let currentPosition = procGenLine.next();
+    let prevPosition = currentPosition;
+    let stepBy = .1;
+    let calls = 0;
 
-    /**
-     * generate a line
-     * create a temp vector2 and feed it start data (first point: a)
-     * set current segment to 1 (this happens in constructor)
-     * draw from temp to b (this.segments[0], this.segments[1]) by a step value
-     * draw and increment values of temp until temp.x and temp.y are equal to
-     * b.x and b.y
-     * if temp.x and temp.y === z.x and z.y (where z is the last segment)
-     * be done
-     * else
-     * set current segment to current segment + 1
-     */
+    function drawCompletedSegments(completed: Vector2[]) {
+      let prev = 0;
+      for (let current = 0; current < completed.length; current++) {
+        if (current === 0) {
+          continue;
+        }
+        const prevSegment = completed[prev];
+        const currentSegment = completed[current];
+        ctx.beginPath();
+        ctx.moveTo(prevSegment.x, prevSegment.y);
+        ctx.lineTo(currentSegment.x, currentSegment.y);
+        ctx.stroke();
+        prev = current;
+      }
+    }
+
+    function drawNextSegment(start: Vector2, end: Vector2) {
+      ctx.beginPath();
+      ctx.moveTo(start.x, start.y);
+      ctx.lineTo(end.x, end.y);
+      ctx.stroke();
+    }
+
+    const TARGET_FPS = 60;
+    const FRAME_MIN_TIME = 1000 / TARGET_FPS * (TARGET_FPS / TARGET_FPS) -
+      (1000 / TARGET_FPS) * 0.5;
+
     function animate(timestamp: number): void {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       drawGrid(canvasContext, grid);
       const deltaTime = timestamp - lastTimeStamp;
 
-      if (deltaTime > 1000) {
-        lastTimeStamp = timestamp;
+      if (deltaTime < FRAME_MIN_TIME) {
+        requestAnimationFrame(animate);
+        return;
       }
 
-      if (deltaTime > 10000 && wait) {
-        wait = false;
-      }
+      lastTimeStamp = timestamp;
 
       if (debug) {
         calculateFPS(timestamp);
       }
 
-      // TODO: rename some of this stuff...
-      let nextIndex = procGenLine.nextSegmentIndex;
-      let prevSegment = procGenLine.segments[nextIndex - 1];
-      let currentSegment = procGenLine.segments[nextIndex];
-      let tempIndex = 0;
-
-      if (nextIndex > procGenLine.segments.length) {
-        procGenLine = new ProcGenLine(canvasContext, gridLayoutOptions, edges);
-        procGenLine.generate();
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        tempIndex = 0;
-        temp = new Vector2(procGenLine.start.x, procGenLine.start.y);
-        console.log({ nextIndex, prevSegment, currentSegment, tempIndex })
-        diff = Vector2.subtract(
-          procGenLine.segments[procGenLine.nextSegmentIndex],
-          temp,
+      if (prevPosition !== currentPosition) {
+        const diff = Vector2.subtract(
+          currentPosition,
+          prevPosition,
         );
-      }
 
-      if (temp.x === currentSegment.x && temp.y === currentSegment.y) {
-        procGenLine.nextSegmentIndex += 1;
-        temp = new Vector2(currentSegment.x, currentSegment.y);
-        diff = Vector2.subtract(
-          procGenLine.segments[procGenLine.nextSegmentIndex],
-          temp,
-        );
-      } else {
         if (diff.x === 0) {
           if (diff.y < 0) {
-            temp.y -= stepBy;
+            currentPosition.y -= stepBy;
           } else {
-            temp.y += stepBy;
+            currentPosition.y += stepBy;
           }
         } else {
           if (diff.x < 0) {
-            temp.x -= stepBy;
+            currentPosition.x -= stepBy;
           } else {
-            temp.x += stepBy;
+            currentPosition.x += stepBy;
           }
         }
+        drawNextSegment(prevPosition, currentPosition);
       }
 
-      // draw the previously animated segments as solid lines
-      while (tempIndex < procGenLine.nextSegmentIndex - 1) {
-        let a = procGenLine.segments[tempIndex];
-        let b = procGenLine.segments[tempIndex + 1];
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
-        tempIndex += 1;
+      drawCompletedSegments(
+        procGenLine.segments.slice(0, procGenLine.currentIndex),
+      );
+
+      prevPosition = currentPosition;
+      currentPosition = procGenLine.next();
+
+      if (currentPosition.x === 0 && currentPosition.y === 0) {
+        procGenLine = new ProcGenLine(canvasContext, gridLayoutOptions, edges);
+        procGenLine.generate();
+        currentPosition = procGenLine.next();
       }
-      ctx.beginPath();
-      ctx.moveTo(prevSegment.x, prevSegment.y);
-      ctx.lineTo(temp.x, temp.y);
-      ctx.stroke();
 
       requestAnimationFrame(animate);
     }
