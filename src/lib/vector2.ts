@@ -40,4 +40,11 @@ export default class Vector2 {
     }
     return a.x === b.x && a.y === b.y;
   }
+
+  static copy(original: Vector2): Vector2 {
+    if (!original) {
+      throw new Error("Invalid original Vector2");
+    }
+    return new Vector2(original.x, original.y);
+  }
 }

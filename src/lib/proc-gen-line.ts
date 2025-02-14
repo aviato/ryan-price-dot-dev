@@ -1,4 +1,3 @@
-import isEmptyValue from "./utils/isEmptyValue.ts";
 import getRandomInt from "./utils/getRandomInt.ts";
 import Vector2 from "./vector2.ts";
 
@@ -17,19 +16,11 @@ enum Directions {
 
 export default class ProcGenLine {
   canvas: HTMLCanvasElement;
-  ctx: CanvasRenderingContextthis.stepByD;
-  start: Vector2;
-  progress: Vector2;
+  ctx: CanvasRenderingContext2D;
   segments: Vector2[];
-  currentSegment: number;
-  stepBy: number;
   gridLayoutOptions: GridLayoutOptions;
-  lineStyles: {
-    color: string;
-    lineWidth: number;
-  };
   startingPoints: Vector2[];
-  procGenLineState: ProcGenLineStates;
+  state: ProcGenLineStates;
   currentIndex: number;
 
   constructor(
@@ -49,18 +40,15 @@ export default class ProcGenLine {
     this.startingPoints = startingPoints;
     this.gridLayoutOptions = gridLayoutOptions;
     this.segments = [this.generateStartPos()];
-    this.lineStyles = {
-      color: "black",
-      lineWidth: 1,
-    };
     this.state = ProcGenLineStates.START;
     this.currentIndex = -1;
   }
 
   generateStartPos(): Vector2 {
-    return this.startingPoints[
+    const startingPoint = this.startingPoints[
       Math.floor(Math.random() * (this.startingPoints.length - 1))
     ];
+    return startingPoint;
   }
 
   generate(): Vector2[] {
@@ -121,7 +109,7 @@ export default class ProcGenLine {
   addToTail(): void {
     const { spacingX, spacingY, xMin, xMax, yMin, yMax } =
       this.gridLayoutOptions;
-    const lastPoint = this.segments[this.segments.length - 1];
+    const lastPoint = this.segments.at(-1) as Vector2;
     const randomSpacingValueX = getRandomInt(1, 4) * spacingX;
     const randomSpacingValueY = getRandomInt(1, 4) * spacingY;
     const nextPoint: Vector2 = {
@@ -130,7 +118,7 @@ export default class ProcGenLine {
     };
 
     if (this.segments.length >= 2) {
-      const secondToLastPoint = this.segments[this.segments.length - 2];
+      const secondToLastPoint = this.segments.at(-2) as Vector2; // yikes
       const direction = this.getDirection(secondToLastPoint, lastPoint); // a, b, c -> c - b
       const randomDirection = this.getRandomDirection(direction);
 
@@ -168,7 +156,7 @@ export default class ProcGenLine {
         nextPoint.x = lastPoint.x;
         nextPoint.y = lastPoint.y + randomSpacingValueY;
       } else {
-        console.error("Now starting point matched L, R, U, or D");
+        console.error("Invalid starting point for nextPoint");
       }
     }
 
@@ -178,6 +166,7 @@ export default class ProcGenLine {
     ) {
       this.state = ProcGenLineStates.DONE;
     }
+
     this.segments.push(nextPoint);
   }
 }
