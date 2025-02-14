@@ -99,7 +99,6 @@ function App() {
   }
 
   useEffect(() => {
-    console.log("CALLING USEEFFECT");
     const canvas = canvasEleRef.current as HTMLCanvasElement;
     if (!canvas) return;
     const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
@@ -138,17 +137,21 @@ function App() {
     const edges: Vector2[] = grid.filter(
       (v2: Vector2): boolean => {
         return !(
-          (v2.x === xMin && v2.y === yMin) ||
-          (v2.x === xMin && v2.y === yMax) ||
-          (v2.x === xMax && v2.y === yMin) ||
-          (v2.x === xMax && v2.y === yMax)
-        ) && (v2.x === xMin || v2.x === xMax || v2.y === yMin || v2.y === yMax);
+          v2.x === xMin && v2.y === yMin ||
+          v2.x === xMin && v2.y === yMax ||
+          v2.x === xMax && v2.y === yMin ||
+          v2.x === xMax && v2.y === yMax
+        ) && (
+          v2.x === xMin ||
+          v2.x === xMax ||
+          v2.y === yMin ||
+          v2.y === yMax
+        );
       },
     );
     console.log({ grid, edges });
     let lastTimeStamp = 0;
     let procGenLine = new ProcGenLine(
-      canvasContext,
       gridLayoutOptions,
       edges,
     );
@@ -161,7 +164,6 @@ function App() {
     const FRAME_MIN_TIME = 1000 / TARGET_FPS * (TARGET_FPS / TARGET_FPS) -
       (1000 / TARGET_FPS) * 0.5;
 
-    // TODO: use Path2D istead of managing manually via ctx
     const animate = (timestamp: number): void => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       //const deltaTime = timestamp - lastTimeStamp;
@@ -213,7 +215,6 @@ function App() {
 
       if (currentPosition.x === 0 && currentPosition.y === 0) {
         procGenLine = new ProcGenLine(
-          canvasContext,
           gridLayoutOptions,
           edges,
         );

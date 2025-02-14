@@ -7,16 +7,8 @@ enum ProcGenLineStates {
   GENERATING,
   DONE,
 }
-enum Directions {
-  UP = 1,
-  DOWN,
-  LEFT,
-  RIGHT,
-}
 
 export default class ProcGenLine {
-  canvas: HTMLCanvasElement;
-  ctx: CanvasRenderingContext2D;
   segments: Vector2[];
   gridLayoutOptions: GridLayoutOptions;
   startingPoints: Vector2[];
@@ -24,19 +16,12 @@ export default class ProcGenLine {
   currentIndex: number;
 
   constructor(
-    { canvas, ctx }: CanvasContext,
     gridLayoutOptions: GridLayoutOptions,
     startingPoints: Vector2[],
   ) {
-    if (!canvas || !ctx) {
-      throw new Error("Canvas and context must be provided.");
-    }
     if (!gridLayoutOptions) {
       throw new Error("Grid layout options must be provided.");
     }
-
-    this.canvas = canvas;
-    this.ctx = ctx;
     this.startingPoints = startingPoints;
     this.gridLayoutOptions = gridLayoutOptions;
     this.segments = [this.generateStartPos()];
@@ -52,6 +37,7 @@ export default class ProcGenLine {
   }
 
   generate(): Vector2[] {
+    console.log("GENERATING");
     while (this.state !== ProcGenLineStates.DONE) {
       this.addToTail();
     }
@@ -72,8 +58,6 @@ export default class ProcGenLine {
 
   getDirection(a: Vector2, b: Vector2): LineDirection {
     const difference: Vector2 = Vector2.getDirection(a, b);
-    // NOTE: change this to return a Vector2 that represents a given UPLR direction
-    // Ex: { x: 1, y: 0} -> Right, { x: -1, y: 0 } -> Left
     if (difference.x >= 1 && difference.y === 0) {
       return "right";
     } else if (difference.x < 0 && difference.y === 0) {
@@ -85,18 +69,20 @@ export default class ProcGenLine {
     }
   }
 
+  getExcludedDirection(direction: LineDirection): LineDirection {
+    if (direction === "left") {
+      return "right";
+    } else if (direction === "right") {
+      return "left";
+    } else if (direction === "up") {
+      return "down";
+    } else {
+      return "up";
+    }
+  }
+
   getRandomDirection(currentDirection: LineDirection): LineDirection {
-    const excludedDirection = (() => {
-      if (currentDirection === "left") {
-        return "right";
-      } else if (currentDirection === "right") {
-        return "left";
-      } else if (currentDirection === "up") {
-        return "down";
-      } else {
-        return "up";
-      }
-    })();
+    const excludedDirection = this.getExcludedDirection(currentDirection);
     const directions: LineDirection[] = ["up", "down", "left", "right"];
     const filteredDirections = directions.filter((dir) =>
       dir !== excludedDirection
@@ -118,8 +104,8 @@ export default class ProcGenLine {
     };
 
     if (this.segments.length >= 2) {
-      const secondToLastPoint = this.segments.at(-2) as Vector2; // yikes
-      const direction = this.getDirection(secondToLastPoint, lastPoint); // a, b, c -> c - b
+      const secondToLastPoint = this.segments.at(-2) as Vector2;
+      const direction = this.getDirection(secondToLastPoint, lastPoint);
       const randomDirection = this.getRandomDirection(direction);
 
       if (randomDirection === "left") {
@@ -161,7 +147,9 @@ export default class ProcGenLine {
     }
 
     if (
-      nextPoint.x === xMin || nextPoint.x === xMax || nextPoint.y === yMin ||
+      nextPoint.x === xMin ||
+      nextPoint.x === xMax ||
+      nextPoint.y === yMin ||
       nextPoint.y === yMax
     ) {
       this.state = ProcGenLineStates.DONE;
