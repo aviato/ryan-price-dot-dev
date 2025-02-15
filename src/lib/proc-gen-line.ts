@@ -41,9 +41,9 @@ export default class ProcGenLine {
     while (this.state !== ProcGenLineStates.DONE) {
       this.addToTail();
     }
-    console.log("GENERATION COMPLETE");
-    console.log(`${this.segments.length} segments.`);
-    console.log(this.segments);
+    //console.log("GENERATION COMPLETE");
+    //console.log(`${this.segments.length} segments.`);
+    //console.log(this.segments);
     return this.segments;
   }
 
@@ -81,12 +81,19 @@ export default class ProcGenLine {
     }
   }
 
-  getRandomDirection(currentDirection: LineDirection): LineDirection {
-    const excludedDirection = this.getExcludedDirection(currentDirection);
-    const directions: LineDirection[] = ["up", "down", "left", "right"];
-    const filteredDirections = directions.filter((dir) =>
-      dir !== excludedDirection
+  getRandomDirection(
+    currentDirection: LineDirection,
+    initialDirection: LineDirection,
+  ): LineDirection {
+    const excludedDirection = [currentDirection, initialDirection].map(
+      (direction: LineDirection) => {
+        return this.getExcludedDirection(direction);
+      },
     );
+    const directions: LineDirection[] = ["up", "down", "left", "right"];
+    const filteredDirections = directions.filter((direction: LineDirection) => {
+      return excludedDirection.indexOf(direction) === -1;
+    });
     return filteredDirections[
       Math.floor(Math.random() * filteredDirections.length)
     ];
@@ -105,8 +112,16 @@ export default class ProcGenLine {
 
     if (this.segments.length >= 2) {
       const secondToLastPoint = this.segments.at(-2) as Vector2;
-      const direction = this.getDirection(secondToLastPoint, lastPoint);
-      const randomDirection = this.getRandomDirection(direction);
+      const currentDirection = this.getDirection(secondToLastPoint, lastPoint);
+      const initialDirection = this.getDirection(
+        this.segments.at(0) as Vector2,
+        this.segments.at(1) as Vector2,
+      );
+
+      const randomDirection = this.getRandomDirection(
+        currentDirection,
+        initialDirection,
+      );
 
       if (randomDirection === "left") {
         nextPoint.x = Math.max(xMin, lastPoint.x - randomSpacingValueX);

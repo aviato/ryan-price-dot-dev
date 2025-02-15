@@ -77,6 +77,7 @@ function App() {
   const renderRef = useRef(0);
   const canvasEleRef = useRef<HTMLCanvasElement>(null);
   const mainEleRef = useRef<HTMLMainElement>(null);
+  const titleSectionRef = useRef<HTMLDivElement>(null);
   const fpsRef = useRef({
     lastFrameTime: 0,
     frameCount: 0,
@@ -84,6 +85,7 @@ function App() {
   const [resized, setResized] = useState(false);
   const [fps, setFps] = useState(0);
   const [debug, setDebug] = useState(false);
+  const [collision, setCollision] = useState(false);
 
   // TODO there is a bug right now where FPS count does not clear when reloading after a save
   function calculateFPS(timestamp: number): void {
@@ -158,22 +160,39 @@ function App() {
     procGenLine.generate();
     let currentPosition = procGenLine.next();
     let prevPosition = Vector2.copy(currentPosition);
-    const stepBy = 44;
+    const stepBy = 16;
     let animationFrameID = 0;
     const TARGET_FPS = 60;
     const FRAME_MIN_TIME = 1000 / TARGET_FPS * (TARGET_FPS / TARGET_FPS) -
       (1000 / TARGET_FPS) * 0.5;
+    ctx.lineWidth = 4;
+    ctx.lineCap = "round";
 
     const animate = (timestamp: number): void => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       //const deltaTime = timestamp - lastTimeStamp;
+      ctx.fillStyle = "black";
       ctx.fill(gridPath);
       ctx.moveTo(spacingX, spacingY);
-
+      ctx.strokeStyle = "tomato";
       lastTimeStamp = timestamp;
 
       if (debug) {
         calculateFPS(timestamp);
+      }
+
+      if (titleSectionRef !== null) {
+        const boundingBox = titleSectionRef.current.getBoundingClientRect();
+        if (
+          (prevPosition.x > boundingBox.x &&
+            prevPosition.x < boundingBox.x + boundingBox.width) &&
+          (prevPosition.y > boundingBox.y &&
+            prevPosition.y < boundingBox.y + boundingBox.height)
+        ) {
+          setCollision(true);
+        } else {
+          setCollision(false);
+        }
       }
 
       if (!Vector2.isEqual(prevPosition, currentPosition)) {
@@ -242,10 +261,21 @@ function App() {
       <canvas
         id="bg-canvas"
         ref={canvasEleRef}
-        className="h-full w-full absolute t-0 l-0 z-0"
+        className="h-full w-full absolute t-0 l-0 z-0 blur"
       >
         Your browser does not support the HTML5 canvas element :-(
       </canvas>
+      <section className="h-full w-full flex justify-center items-center">
+        <div
+          ref={titleSectionRef}
+          className={`${collision ? "" : ""}`}
+        >
+          <h1 className="text-7xl">Ryan Price</h1>
+          <h2 className="text-4xl">
+            Full Stack Engineer & Cool Guy
+          </h2>
+        </div>
+      </section>
     </main>
   );
 }
