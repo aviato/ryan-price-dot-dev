@@ -47,4 +47,12 @@ export default class Vector2 {
     }
     return new Vector2(original.x, original.y);
   }
+
+  static multiply(a: Vector2, b: Vector2): Vector2 {
+    if (isEmptyValue(a) || isEmptyValue(b)) {
+      throw new Error("Invalid vector2s passed to multiply.");
+    }
+
+    return new Vector2(a.x * b.x, a.y * b.y);
+  }
 }
