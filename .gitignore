@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local reference / design material — kept on disk, out of version control
+# (handoff brief, mockups, and the résumé PDF with personal contact info).
+docs/

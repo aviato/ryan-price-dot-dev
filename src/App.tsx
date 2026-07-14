@@ -1,227 +1,252 @@
-import { useEffect, useRef } from "react";
-import ProcGenLine from "./lib/proc-gen-line.ts";
-import Vector2 from "./lib/vector2.ts";
-import type { GridLayoutOptions, Rect } from "./lib/types.ts";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Sections from "./components/Sections.tsx";
+import GridConsole from "./components/GridConsole.tsx";
+import GridEngine from "./lib/engine/engine.ts";
+import { computeGeom, frameBox, snapRectToFrame } from "./lib/engine/grid.ts";
+import type { AnchorSet, RectPx } from "./lib/engine/choreo.ts";
+import { DEFAULT_PARAMS, type Params } from "./lib/config.ts";
+import { SECTIONS } from "./content.ts";
+import type { FrameRect, GridGeom } from "./lib/types.ts";
+import "./styles/site.css";
 
-// Grid density (columns across the canvas).
-const COLS = 24;
-// Pixels the drawing head advances per frame.
-const STEP_PX = 4;
-// Clearance kept between the line and the title card.
-const OBSTACLE_PADDING = 20;
+export default function App() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const engineRef = useRef<GridEngine | null>(null);
+  const frameEls = useRef<Record<string, HTMLDivElement | null>>({});
+  const sectionEls = useRef<Record<string, HTMLElement | null>>({});
+  const paramsRef = useRef<Params>(DEFAULT_PARAMS);
+  const geomRef = useRef<GridGeom | null>(null);
+  const activeRef = useRef<string>(SECTIONS[0].id);
 
-const buildGrid = (
-  { cols, rows, spacingX, spacingY }: GridLayoutOptions,
-): Vector2[] => {
-  const grid: Vector2[] = [];
-  for (let x = 1; x < cols; x++) {
-    for (let y = 1; y < rows; y++) {
-      grid.push(new Vector2(Math.round(x * spacingX), Math.round(y * spacingY)));
-    }
-  }
-  return grid;
-};
+  // Debug tools (the Grid Console) are only available with ?debug=1 in the URL.
+  const debug = new URLSearchParams(location.search).get("debug") === "1";
 
-const createGridPath = (grid: Vector2[]): Path2D => {
-  const path = new Path2D();
-  grid.forEach(({ x, y }) => {
-    const dot = new Path2D();
-    dot.arc(x, y, 2, 0, 2 * Math.PI);
-    path.addPath(dot);
-  });
-  return path;
-};
+  const [params, setParams] = useState<Params>(DEFAULT_PARAMS);
+  const [active, setActive] = useState<string>(SECTIONS[0].id);
+  const [consoleOpen, setConsoleOpen] = useState(debug);
+  const [scrolled, setScrolled] = useState(false);
+  const scrolledRef = useRef(false);
 
-const createSegmentsPath = (segments: Vector2[]): Path2D => {
-  const path = new Path2D();
-  if (segments.length === 0) return path;
-  path.moveTo(segments[0].x, segments[0].y);
-  for (let i = 1; i < segments.length; i++) {
-    path.lineTo(segments[i].x, segments[i].y);
-  }
-  return path;
-};
+  const patchParams = useCallback(
+    (patch: Partial<Params>) => setParams((p) => ({ ...p, ...patch })),
+    [],
+  );
 
-function App() {
-  const gridCanvasRef = useRef<HTMLCanvasElement>(null);
-  const lineCanvasRef = useRef<HTMLCanvasElement>(null);
-  const titleRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const gridCanvas = gridCanvasRef.current;
-    const lineCanvas = lineCanvasRef.current;
-    if (!gridCanvas || !lineCanvas) return;
-    const gridCtx = gridCanvas.getContext("2d");
-    const lineCtx = lineCanvas.getContext("2d");
-    if (!gridCtx || !lineCtx) return;
-
-    // Back the canvases at device resolution but draw in CSS pixels, so canvas
-    // coordinates line up with getBoundingClientRect() (used for the obstacle).
-    const scale = window.devicePixelRatio || 1;
-    const canvasRect = lineCanvas.getBoundingClientRect();
-    const width = canvasRect.width;
-    const height = canvasRect.height;
-    const setupCanvas = (
-      canvas: HTMLCanvasElement,
-      ctx: CanvasRenderingContext2D,
-    ) => {
-      canvas.width = width * scale;
-      canvas.height = height * scale;
-      ctx.scale(scale, scale);
-    };
-    setupCanvas(gridCanvas, gridCtx);
-    setupCanvas(lineCanvas, lineCtx);
-
-    // Square cells: one spacing for both axes; rows follow from the height.
-    const spacing = Math.max(1, Math.round(width / COLS));
-    const rows = Math.max(2, Math.round(height / spacing));
-    const gridLayoutOptions: GridLayoutOptions = {
-      cols: COLS,
-      rows,
-      spacingX: spacing,
-      spacingY: spacing,
-      xMin: spacing,
-      xMax: spacing * (COLS - 1),
-      yMin: spacing,
-      yMax: spacing * (rows - 1),
-    };
-    const { xMin, xMax, yMin, yMax } = gridLayoutOptions;
-
-    const grid = buildGrid(gridLayoutOptions);
-
-    // The dot grid is static, so draw it once. It's blurred via CSS on the
-    // element, keeping the animated line (a separate canvas) crisp.
-    gridCtx.fillStyle = "#78716c";
-    gridCtx.fill(createGridPath(grid));
-
-    // Non-corner perimeter points: valid places for a line to start.
-    const edges = grid.filter((v) => {
-      const onEdge = v.x === xMin || v.x === xMax || v.y === yMin || v.y === yMax;
-      const isCorner =
-        (v.x === xMin || v.x === xMax) && (v.y === yMin || v.y === yMax);
-      return onEdge && !isCorner;
-    });
-
-    // The title card, measured in canvas-local coordinates.
-    const obstacle = (): Rect | null => {
-      const el = titleRef.current;
-      if (!el) return null;
-      const r = el.getBoundingClientRect();
-      return {
-        x: r.x - canvasRect.x,
-        y: r.y - canvasRect.y,
-        width: r.width,
-        height: r.height,
-      };
-    };
-    const obstacleRect = obstacle();
-
-    // The inflated card boundary the line traces. Used to fire the shimmer.
-    const boundary = obstacleRect && {
-      left: obstacleRect.x - OBSTACLE_PADDING,
-      right: obstacleRect.x + obstacleRect.width + OBSTACLE_PADDING,
-      top: obstacleRect.y - OBSTACLE_PADDING,
-      bottom: obstacleRect.y + obstacleRect.height + OBSTACLE_PADDING,
-    };
-    const onBoundary = (p: Vector2): boolean => {
-      if (!boundary) return false;
-      const tol = 1.5;
-      const onVertical =
-        (Math.abs(p.x - boundary.left) <= tol ||
-          Math.abs(p.x - boundary.right) <= tol) &&
-        p.y >= boundary.top - tol &&
-        p.y <= boundary.bottom + tol;
-      const onHorizontal =
-        (Math.abs(p.y - boundary.top) <= tol ||
-          Math.abs(p.y - boundary.bottom) <= tol) &&
-        p.x >= boundary.left - tol &&
-        p.x <= boundary.right + tol;
-      return onVertical || onHorizontal;
-    };
-
-    const spawnLine = (): ProcGenLine => {
-      const line = new ProcGenLine(gridLayoutOptions, edges);
-      line.generate();
-      if (obstacleRect) line.applyObstacle(obstacleRect, OBSTACLE_PADDING, true);
-      return line;
-    };
-
-    let procGenLine = spawnLine();
-    let currentPosition = procGenLine.next();
-    let prevPosition = Vector2.copy(currentPosition);
-    let animationFrameID = 0;
-    let shimmering = false;
-
-    lineCtx.lineWidth = 4;
-    lineCtx.lineCap = "round";
-    lineCtx.lineJoin = "round";
-    lineCtx.strokeStyle = "tomato";
-
-    const animate = (): void => {
-      lineCtx.clearRect(0, 0, width, height);
-
-      // Ease the head toward the current target vertex along its one axis.
-      if (!Vector2.isEqual(prevPosition, currentPosition)) {
-        const diff = Vector2.subtract(currentPosition, prevPosition);
-        if (diff.x !== 0) {
-          const step = Math.min(STEP_PX, Math.abs(diff.x)) * Math.sign(diff.x);
-          prevPosition.x += step;
-        } else {
-          const step = Math.min(STEP_PX, Math.abs(diff.y)) * Math.sign(diff.y);
-          prevPosition.y += step;
-        }
-      }
-
-      const completed = procGenLine.segments.slice(0, procGenLine.currentIndex);
-      const path = createSegmentsPath(completed);
-      path.lineTo(prevPosition.x, prevPosition.y);
-      lineCtx.stroke(path);
-
-      // Shimmer the title while the head is tracing its perimeter.
-      const nowShimmering = onBoundary(prevPosition);
-      if (nowShimmering !== shimmering) {
-        shimmering = nowShimmering;
-        titleRef.current?.classList.toggle("is-shimmering", shimmering);
-      }
-
-      if (Vector2.isEqual(prevPosition, currentPosition)) {
-        currentPosition = procGenLine.next();
-      }
-
-      // (0, 0) is the sentinel for "walk finished" — start a fresh line.
-      if (currentPosition.x === 0 && currentPosition.y === 0) {
-        procGenLine = spawnLine();
-        currentPosition = procGenLine.next();
-        prevPosition = Vector2.copy(currentPosition);
-      }
-
-      animationFrameID = requestAnimationFrame(animate);
-    };
-
-    animationFrameID = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(animationFrameID);
+  // The engine's single source of truth for where content is: the section's
+  // *real* frame box, measured live and snapped to the grid so lines route
+  // around it. Returns null while unmeasurable (before layout).
+  const measureFrame = useCallback((id: string): FrameRect | null => {
+    const g = geomRef.current;
+    const el = frameEls.current[id];
+    if (!g || !el) return null;
+    const r = el.getBoundingClientRect();
+    return snapRectToFrame(g, r);
   }, []);
 
+  // Measure the real elements a section's entrance choreography attaches to
+  // (viewport px). Called on settle, when the section is snapped into place.
+  const measureAnchors = useCallback((id: string): AnchorSet | null => {
+    const el = frameEls.current[id];
+    if (!el) return null;
+    const root = (el.querySelector(".frame-content") as HTMLElement | null) ?? el;
+    const rp = (e: Element | null): RectPx | null => {
+      if (!e) return null;
+      const r = e.getBoundingClientRect();
+      return { x: r.left, y: r.top, w: r.width, h: r.height };
+    };
+    const onScreen = (r: RectPx | null): r is RectPx =>
+      !!r && r.y < window.innerHeight && r.y + r.h > 0;
+    const rps = (sel: string): RectPx[] =>
+      [...root.querySelectorAll(sel)].map(rp).filter(onScreen);
+    const frameRect = rp(el);
+    switch (id) {
+      case "index":
+        return { frame: frameRect, heading: rp(root.querySelector("h1")) };
+      case "about":
+        return { frame: frameRect, heading: rp(root.querySelector("h2")) };
+      case "experience":
+        return { frame: frameRect, items: rps(".job") };
+      case "projects":
+        return { frame: frameRect, items: rps(".card") };
+      case "skills":
+        return { frame: frameRect, items: rps(".skill-group h4") };
+      case "contact":
+        return {
+          frame: frameRect,
+          heading: rp(root.querySelector("h2")),
+          items: [rp(root.querySelector(".contact-links"))].filter(onScreen),
+        };
+      default:
+        return { frame: frameRect };
+    }
+  }, []);
+
+  // Recompute grid geometry, position the DOM frames (width + horizontal
+  // offset only — height/vertical is natural flow), then re-settle the engine.
+  const relayout = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    const w = window.innerWidth;
+    const mobile = w < 720;
+    // On phones the desktop cell is too coarse (~9 columns) to fit a comfortable
+    // content column AND routing gutters. Use a denser grid (~16 columns) so the
+    // frame can be near-full-width and still leave gutters for the lines.
+    const sp = mobile
+      ? Math.max(20, Math.min(paramsRef.current.gridSpacing, Math.round(w / 16)))
+      : paramsRef.current.gridSpacing;
+    const geom = computeGeom(w, window.innerHeight, sp);
+    geomRef.current = geom;
+    for (const s of SECTIONS) {
+      const el = frameEls.current[s.id];
+      if (!el) continue;
+      // Mobile: one near-full-width column for every section (handoff §3).
+      const box = frameBox(geom, mobile ? 0.82 : s.frameWidth);
+      el.style.setProperty("--fx", `${box.x}px`);
+      el.style.setProperty("--fw", `${box.w}px`);
+    }
+    engine.setGeom(geom);
+    engine.settle(activeRef.current);
+  }, []);
+
+  // Reflect theme / frame-border to <html> and push params to the engine.
+  useEffect(() => {
+    const el = document.documentElement;
+    el.dataset.theme = params.theme;
+    el.dataset.frameBorder = params.frameBorder;
+    paramsRef.current = params;
+    engineRef.current?.setParams(params);
+  }, [params]);
+
+  // Grid spacing changes the lattice → full re-layout.
+  useEffect(() => {
+    relayout();
+  }, [params.gridSpacing, relayout]);
+
+  // Engine lifecycle: create, lay out, observe sections, wire scroll + keys.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const engine = new GridEngine(canvas, {
+      frameProvider: measureFrame,
+      anchors: measureAnchors,
+    });
+    engineRef.current = engine;
+    engine.setParams(paramsRef.current);
+    engine.start();
+    relayout(); // sets geom + first settle
+
+    // Rail highlight + current section id (used by scroll-settle below).
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            activeRef.current = e.target.id;
+            setActive(e.target.id);
+          }
+        }
+      },
+      { threshold: 0.55 },
+    );
+    for (const s of SECTIONS) {
+      const el = sectionEls.current[s.id];
+      if (el) io.observe(el);
+    }
+
+    // Lines are hidden while scrolling and (re)spawned once the page settles,
+    // so they never draw against a mid-scroll (misaligned) frame.
+    let settleTimer = 0;
+    const onScroll = () => {
+      engineRef.current?.setScrolling();
+      clearTimeout(settleTimer);
+      settleTimer = window.setTimeout(
+        () => engineRef.current?.settle(activeRef.current),
+        160,
+      );
+      // Toggle the hero scroll-cue / back-to-top affordances at a threshold.
+      const s = window.scrollY > 40;
+      if (s !== scrolledRef.current) {
+        scrolledRef.current = s;
+        setScrolled(s);
+      }
+    };
+    const onResize = () => relayout();
+    const onKey = (e: KeyboardEvent) => {
+      if (!debug) return; // H is a no-op unless debug mode is enabled
+      if ((e.key === "h" || e.key === "H") && !e.metaKey && !e.ctrlKey) {
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+        setConsoleOpen((o) => !o);
+      }
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onResize);
+    window.addEventListener("keydown", onKey);
+
+    return () => {
+      engine.stop();
+      io.disconnect();
+      clearTimeout(settleTimer);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("keydown", onKey);
+      engineRef.current = null;
+    };
+  }, [relayout, measureFrame, measureAnchors]);
+
+  const goTo = (id: string) =>
+    sectionEls.current[id]?.scrollIntoView({ behavior: "smooth" });
+
   return (
-    <main className="h-screen w-screen relative overflow-hidden bg-stone-200">
-      <canvas
-        ref={gridCanvasRef}
-        className="h-full w-full absolute top-0 left-0 z-0 blur-[2px]"
+    <>
+      <canvas ref={canvasRef} className="grid-canvas" aria-hidden="true" />
+
+      <nav className="rail" aria-label="sections">
+        {SECTIONS.map((s) => (
+          <button
+            key={s.id}
+            className={s.id === active ? "active" : ""}
+            aria-label={s.label}
+            aria-current={s.id === active}
+            onClick={() => goTo(s.id)}
+          />
+        ))}
+      </nav>
+
+      <Sections
+        setFrameEl={(id, el) => (frameEls.current[id] = el)}
+        setSectionEl={(id, el) => (sectionEls.current[id] = el)}
       />
-      <canvas
-        ref={lineCanvasRef}
-        className="h-full w-full absolute top-0 left-0 z-10 blur-[2px]"
+
+      <button
+        className={`scroll-cta ${scrolled ? "hidden" : ""}`}
+        onClick={() => goTo(SECTIONS[1].id)}
+        aria-label="Scroll down"
       >
-        Your browser does not support the HTML5 canvas element :-(
-      </canvas>
-      <section className="h-full w-full flex justify-center items-center relative z-20 pointer-events-none">
-        <div ref={titleRef} className="title-card text-center">
-          <h1 className="text-7xl font-bold">Ryan Price</h1>
-          <h2 className="text-4xl">Full Stack Engineer &amp; Cool Guy</h2>
-        </div>
-      </section>
-    </main>
+        <span>scroll</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+
+      <button
+        className={`to-top ${scrolled ? "" : "hidden"}`}
+        onClick={() => goTo(SECTIONS[0].id)}
+        aria-label="Back to top"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+          <path d="M18 15l-6-6-6 6" />
+        </svg>
+      </button>
+
+      {debug && consoleOpen && (
+        <GridConsole
+          params={params}
+          onChange={patchParams}
+          onReplay={() => engineRef.current?.replay()}
+          onClose={() => setConsoleOpen(false)}
+        />
+      )}
+    </>
   );
 }
-
-export default App;
